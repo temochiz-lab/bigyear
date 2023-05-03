@@ -1,0 +1,122 @@
+// ------------------------------------------------------------------
+// 定数いろいろ
+// ------------------------------------------------------------------
+// GoogleドキュメントのテンプレートIDを指定
+const TEMPLATE_ID   = '17C_VvbUsOWUAv8yhSUDcPTKdkAmMldhwzXaMjawK0z4'; // 認定証テンプレート
+// GoogleシートのIDとシート名を指定
+const SHEET_ID      = '1WrLpkQpIa3nAL-zUkJcx19UvMRxD36wcGIsAD9u2HvU'; // 集計シート2023
+const SHEET_NAME    = '認定証発行';
+// 新しいファイル名を指定
+const NEW_FILE_NAME = '認定証';
+// 作業フォルダ
+const FOLDER_ID     = '1q3b5R7oQI5BAqwkxqTpPLg58Q8JyYncd';
+
+// ------------------------------------------------------------------
+// 認定書を一括発行
+// これがメインなので、こいつを実行して認定証を作成
+// ------------------------------------------------------------------
+function createDocumentsFromTemplate() {
+  // スプレッドシートを開いて認定証発行シートを取得
+  const sheet          = SpreadsheetApp.openById(SHEET_ID).getSheetByName(SHEET_NAME);
+  // 最終行から1行目を引いてデータ行数を取得
+  const numberOfRows   = sheet.getLastRow() - 1;
+
+  // 各行について処理を行う
+  for (let row = 2; row <= numberOfRows + 1; row++) {
+    const data            = sheet.getRange(`C${row}:Z${row}`).getValues()[0];
+    const totalFishSpecies = sheet.getRange(`B${row}`).getValue();
+
+    // 出力デバッグ情報
+    if (data[0] === '' || totalFishSpecies == 0) {
+      Logger.log(`x Row: ${row} / ${numberOfRows}　Name: ${data[0]}`);
+      continue;
+    }
+    Logger.log(`o Row: ${row} / ${numberOfRows}　Name: ${data[0]}`);
+
+    // B列の数字を3桁に変換
+    const BColumn         = ('000' + totalFishSpecies).slice(-3);
+    // 新しいファイル名を生成
+    const newDocumentName = `${NEW_FILE_NAME}_${BColumn}_${data[0]}`;
+    const templateFile    = DriveApp.getFileById(TEMPLATE_ID);
+    // テンプレートファイルをコピーして新しいドキュメントを作成
+    const newDocumentFile = templateFile.makeCopy(newDocumentName, DriveApp.getFolderById(FOLDER_ID));
+    const newDocumentId   = newDocumentFile.getId();
+    const newDocument     = DocumentApp.openById(newDocumentId);
+    const body            = newDocument.getBody();
+
+    // プレースホルダー名を取得
+    const placeholderNames = sheet.getRange('C1:Z1').getValues()[0];
+    // プレースホルダーをデータで置き換える
+    for (let i = 0; i < placeholderNames.length; i++) {
+      const placeholder = `\\{\\{${placeholderNames[i]}\\}\\}`;
+      body.replaceText(placeholder, data[i]);
+    }
+
+    // 新しいドキュメントを保存して閉じる
+    newDocument.saveAndClose();
+
+    // 新しいドキュメントをPDFとして保存
+    saveAsPDF(newDocumentId, FOLDER_ID, newDocumentName);
+  }
+
+  // すべてのPDFファイルが生成された後で、ZIPファイルにまとめる
+  zipPDFsInFolder(FOLDER_ID, NEW_FILE_NAME, true);
+}
+
+// ------------------------------------------------------------------
+// GoogleドキュメントをPDF形式で保存
+function saveAsPDF(documentId, folderId, fileName) {
+  // ドキュメントとフォルダを取得
+  const documentFile = DriveApp.getFileById(documentId);
+  const folder       = DriveApp.getFolderById(folderId);
+
+  // ドキュメントをPDF形式でエクスポート
+  const pdfBlob      = documentFile.getAs(MimeType.PDF);
+
+  // PDFファイルの名前を設定
+  pdfBlob.setName(fileName + '.pdf');
+
+  // PDFファイルをフォルダに保存
+  folder.createFile(pdfBlob);
+
+  // オリジナルのGoogleドキュメントを削除
+  documentFile.setTrashed(true);
+}
+
+// ------------------------------------------------------------------
+// PDFファイルをZIPファイルにまとめる
+function zipPDFsInFolder(folderId, fileName, isDeleted) {
+  const folder = DriveApp.getFolderById(folderId);
+  const pdfFiles = folder.getFilesByType(MimeType.PDF);
+
+  // PDFファイルを格納する配列を用意
+  const pdfBlobs = [];
+
+  // Iterate through all PDF files and add them to the array
+  while (pdfFiles.hasNext()) {
+    const pdfFile = pdfFiles.next();
+    pdfBlobs.push(pdfFile.getBlob().setName(pdfFile.getName()));
+
+    // If isDeleted is true, remove the PDF file
+    if (isDeleted) {
+      folder.removeFile(pdfFile);
+    }
+  }
+
+  // PDFファイルをZIPにまとめる
+  const zipBlob = Utilities.zip(pdfBlobs, fileName + '.zip');
+
+  // Check if a ZIP file with the same name already exists and delete it
+  const existingZipFiles = folder.getFilesByName(fileName + '.zip');
+  while (existingZipFiles.hasNext()) {
+    const existingZipFile = existingZipFiles.next();
+    folder.removeFile(existingZipFile);
+  }
+
+  // Save the new ZIP file in the folder
+  folder.createFile(zipBlob);
+}
+
+// ------------------------------------------------------------------
+// 以後、テストなど
+// ------------------------------------------------------------------
