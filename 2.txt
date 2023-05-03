@@ -1,0 +1,2 @@
+#/bin/sh
+cat raw2.txt |  LC_ALL=C uniq -c |  LC_ALL=C sort -r > raw3.txt

@@ -1,0 +1,2 @@
+#/bin/sh
+cat raw.txt | awk '(NR%3==1){print}' | tr "\t" "\n" | LC_ALL=C sort > raw2.txt

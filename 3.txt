@@ -1,0 +1,2 @@
+#/bin/sh
+cat raw3.txt | awk '{print $1","$2}' raw3.txt > raw4.csv
